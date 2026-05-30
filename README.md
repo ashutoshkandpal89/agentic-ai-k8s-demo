@@ -161,8 +161,8 @@ open http://localhost:3000  # admin / admin
 
 - 🎤 **Talk:** "Agentic AI Without Chaos" — CNCF Meetup
 - 👤 **Speaker:** Ashutosh Kandpal — Cloud & AI Consultant | Corporate Trainer
+- 🌐 **Website:** [ashutoshkandpal.com](https://ashutoshkandpal.com/)
 - 💼 **LinkedIn:** [linkedin.com/in/ashutoshkandpal](https://linkedin.com/in/ashutoshkandpal)
-
 ---
 
 ## ⭐ If this helped you
