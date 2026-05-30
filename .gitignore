@@ -16,3 +16,6 @@ node_modules/
 *.swo
 kubeconfig
 *.cast       # asciinema recordings (large)
+docs/SPEAKER_NOTES.md
+*.pptx
+*.pdf
