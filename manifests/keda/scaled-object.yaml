@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# KEDA ScaledObject — scale AI workers on Redis queue depth
+# "Scale on what actually matters: work waiting to be done."
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ai-worker-scaler
+  namespace: ai-agents
+  labels:
+    app: ai-worker
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-worker
+
+  # Scale bounds
+  minReplicaCount: 1    # Always keep 1 warm (avoid cold start lag in demo)
+  maxReplicaCount: 20   # Hard ceiling — respects namespace ResourceQuota
+
+  # Scale-down behaviour: wait 60s before removing pods
+  # Prevents flapping and lets in-flight tasks finish
+  cooldownPeriod: 60
+
+  # How often KEDA polls the scaler
+  pollingInterval: 10
+
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0      # Scale up FAST
+          policies:
+          - type: Pods
+            value: 5
+            periodSeconds: 15               # Add up to 5 pods per 15s
+        scaleDown:
+          stabilizationWindowSeconds: 60    # Scale down SLOW
+          policies:
+          - type: Pods
+            value: 2
+            periodSeconds: 30              # Remove at most 2 pods per 30s
+
+  triggers:
+  # Primary trigger: Redis list length = queue depth
+  - type: redis
+    metadata:
+      address: redis.ai-agents.svc.cluster.local:6379
+      listName: task-queue
+      listLength: "5"      # 1 worker per 5 queued tasks
+      enableTLS: "false"
+
+  # Secondary trigger: Prometheus metric (token processing rate)
+  # Uncomment when Prometheus is wired up
+  # - type: prometheus
+  #   metadata:
+  #     serverAddress: http://prometheus.monitoring.svc:9090
+  #     metricName: agent_task_queue_depth
+  #     query: agent_task_queue_depth
+  #     threshold: "5"
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# TriggerAuthentication — if Redis has a password (production pattern)
+# Left here as a reference — not needed for demo
+# ─────────────────────────────────────────────────────────────────────────────
+# apiVersion: keda.sh/v1alpha1
+# kind: TriggerAuthentication
+# metadata:
+#   name: redis-trigger-auth
+#   namespace: ai-agents
+# spec:
+#   secretTargetRef:
+#   - parameter: password
+#     name: redis-secret
+#     key: redis-password
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# PodDisruptionBudget — keep at least 1 worker alive during rolling updates
+# "PDB = availability contract. Non-negotiable."
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-worker-pdb
+  namespace: ai-agents
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-worker

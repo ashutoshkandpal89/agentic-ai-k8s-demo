@@ -1,0 +1,188 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Kyverno Policies — Governance-as-Code for AI Agent Namespaces
+# "Your AI agent should not have more production access than your intern."
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Policy 1: Block privileged containers in AI agent namespaces
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-ai-agent-privileges
+  annotations:
+    policies.kyverno.io/title: "Restrict AI Agent Privileges"
+    policies.kyverno.io/category: "Security"
+    policies.kyverno.io/severity: "high"
+    policies.kyverno.io/description: >
+      AI agent pods must not run as root or with privilege escalation.
+      Agents that compromise themselves should not compromise the host.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: deny-privileged-containers
+    match:
+      any:
+      - resources:
+          kinds: ["Pod"]
+          namespaceSelector:
+            matchLabels:
+              type: ai-agent
+    validate:
+      message: "AI agent pods must not run as privileged. Set securityContext.privileged=false."
+      pattern:
+        spec:
+          containers:
+          - =(securityContext):
+              =(privileged): "false"
+              =(allowPrivilegeEscalation): "false"
+
+  - name: deny-root-user
+    match:
+      any:
+      - resources:
+          kinds: ["Pod"]
+          namespaceSelector:
+            matchLabels:
+              type: ai-agent
+    validate:
+      message: "AI agent pods must not run as root (UID 0)."
+      pattern:
+        spec:
+          =(securityContext):
+            =(runAsNonRoot): "true"
+
+---
+# Policy 2: Require resource limits on ALL agent pods
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-ai-agent-resource-limits
+  annotations:
+    policies.kyverno.io/title: "Require Resource Limits on AI Agents"
+    policies.kyverno.io/category: "Resource Management"
+    policies.kyverno.io/severity: "high"
+    policies.kyverno.io/description: >
+      All AI agent pods must declare CPU and memory limits.
+      An agent without limits is a runaway agent waiting to happen.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: require-limits
+    match:
+      any:
+      - resources:
+          kinds: ["Pod"]
+          namespaceSelector:
+            matchLabels:
+              type: ai-agent
+    validate:
+      message: >
+        AI agent containers must declare resource limits.
+        Unlimited agents are the #1 cause of cloud bills that make finance angry.
+      pattern:
+        spec:
+          containers:
+          - resources:
+              limits:
+                memory: "?*"
+                cpu: "?*"
+
+---
+# Policy 3: Disallow hostNetwork / hostPID / hostIPC
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-ai-agent-host-namespaces
+  annotations:
+    policies.kyverno.io/title: "Restrict Host Namespace Access"
+    policies.kyverno.io/category: "Security"
+    policies.kyverno.io/severity: "critical"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: deny-host-namespaces
+    match:
+      any:
+      - resources:
+          kinds: ["Pod"]
+          namespaceSelector:
+            matchLabels:
+              type: ai-agent
+    validate:
+      message: "AI agents must not access host network, PID, or IPC namespaces."
+      pattern:
+        spec:
+          =(hostNetwork): "false"
+          =(hostPID):     "false"
+          =(hostIPC):     "false"
+
+---
+# Policy 4: Require specific labels on all agent pods (auditability)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-ai-agent-labels
+  annotations:
+    policies.kyverno.io/title: "Require Audit Labels on AI Agent Pods"
+    policies.kyverno.io/category: "Compliance"
+    policies.kyverno.io/severity: "medium"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: require-labels
+    match:
+      any:
+      - resources:
+          kinds: ["Pod"]
+          namespaceSelector:
+            matchLabels:
+              type: ai-agent
+    validate:
+      message: >
+        All AI agent pods must have 'app', 'component', and 'version' labels.
+        You cannot govern what you cannot identify.
+      pattern:
+        metadata:
+          labels:
+            app: "?*"
+            component: "?*"
+
+---
+# Policy 5: Block pods with 'latest' image tag (immutability)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag-ai-agents
+  annotations:
+    policies.kyverno.io/title: "Disallow 'latest' Tag in AI Agent Images"
+    policies.kyverno.io/category: "Best Practices"
+    policies.kyverno.io/severity: "medium"
+spec:
+  # Audit mode — warn but don't block for demo friendliness
+  # Change to Enforce in production
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: disallow-latest
+    match:
+      any:
+      - resources:
+          kinds: ["Pod"]
+          namespaceSelector:
+            matchLabels:
+              type: ai-agent
+    validate:
+      message: >
+        Using 'latest' tag makes deployments non-reproducible.
+        Pin your AI agent images to a specific digest or semantic version.
+      foreach:
+      - list: "request.object.spec.containers"
+        deny:
+          conditions:
+            any:
+            - key: "{{ element.image }}"
+              operator: Equals
+              value: "*:latest"

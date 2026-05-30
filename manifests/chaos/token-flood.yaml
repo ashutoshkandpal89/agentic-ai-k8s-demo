@@ -1,0 +1,198 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CHAOS: Token Flood Job
+# Simulates a runaway agent scenario — submits 50 tasks in parallel.
+# Demo Step 5: Watch KEDA scale up, Kyverno enforce limits, budget alert fire.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: token-flood-chaos
+  namespace: ai-agents
+  labels:
+    app: chaos
+    scenario: token-flood
+  annotations:
+    description: "Demo chaos scenario: floods the task queue to trigger auto-scaling and policy enforcement"
+spec:
+  # Run 5 parallel flooder pods
+  parallelism: 5
+  completions: 5
+  backoffLimit: 0   # Don't retry — we want to see it fail fast
+  ttlSecondsAfterFinished: 120
+
+  template:
+    metadata:
+      labels:
+        app: chaos
+        scenario: token-flood
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: task-flooder
+        image: python:3.11-slim
+        command:
+        - python3
+        - -c
+        - |
+          import urllib.request
+          import json
+          import time
+          import os
+          import sys
+
+          TARGET = os.getenv("TARGET_URL", "http://agent-orchestrator:8080")
+          TASKS_PER_POD = int(os.getenv("TASKS_PER_POD", "10"))
+          POD_NAME = os.getenv("HOSTNAME", "chaos-unknown")
+
+          tasks = [
+              "Research quantum computing advances in 2024",
+              "Summarize the history of containerization",
+              "Compare AWS EKS vs GKE vs AKS for AI workloads",
+              "Explain the CAP theorem with examples",
+              "List the top 10 Kubernetes security best practices",
+              "Analyze the cost model of serverless vs containers",
+              "Describe gradient descent and its variants",
+              "Explain zero-trust networking principles",
+              "Compare Redis vs Kafka for event streaming",
+              "Summarize CNCF landscape for observability tools",
+          ]
+
+          submitted = 0
+          failed    = 0
+
+          print(f"[{POD_NAME}] Flooding {TASKS_PER_POD} tasks to {TARGET}...")
+
+          for i in range(TASKS_PER_POD):
+              payload = json.dumps({
+                  "task":         tasks[i % len(tasks)],
+                  "token_budget": 1500,
+                  "priority":     "high",
+                  "task_type":    "research",
+              }).encode()
+
+              req = urllib.request.Request(
+                  f"{TARGET}/agent/run",
+                  data=payload,
+                  headers={"Content-Type": "application/json"},
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(req, timeout=10) as resp:
+                      result = json.loads(resp.read())
+                      submitted += 1
+                      print(f"[{POD_NAME}] Task {i+1}/{TASKS_PER_POD} queued: {result['task_id'][:8]}... pos={result['queue_position']}")
+              except urllib.error.HTTPError as e:
+                  failed += 1
+                  body = e.read().decode()
+                  print(f"[{POD_NAME}] Task {i+1} REJECTED (HTTP {e.code}): {body[:120]}", file=sys.stderr)
+              except Exception as e:
+                  failed += 1
+                  print(f"[{POD_NAME}] Task {i+1} ERROR: {e}", file=sys.stderr)
+
+              time.sleep(0.1)  # 100ms between submissions
+
+          print(f"[{POD_NAME}] Done. Submitted: {submitted}, Rejected: {failed}")
+          if failed > submitted:
+              print("[DEMO NOTE] Most tasks rejected — token budget is working!")
+
+        env:
+        - name: TARGET_URL
+          value: "http://agent-orchestrator:8080"
+        - name: TASKS_PER_POD
+          value: "10"    # 5 pods × 10 tasks = 50 total submissions
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            cpu:    "50m"
+            memory: "64Mi"
+          limits:
+            cpu:    "200m"
+            memory: "128Mi"
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# CHAOS: Infinite Retry Simulator
+# Simulates a broken agent that keeps retrying — circuit breaker demo
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: infinite-retry-chaos
+  namespace: ai-agents
+  labels:
+    app: chaos
+    scenario: infinite-retry
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      labels:
+        app: chaos
+        scenario: infinite-retry
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: retry-simulator
+        image: python:3.11-slim
+        command:
+        - python3
+        - -c
+        - |
+          import urllib.request
+          import json
+          import time
+          import sys
+
+          TARGET = "http://agent-orchestrator:8080"
+          MAX_ATTEMPTS = 100  # This would be infinite in a real bug
+
+          print("[CHAOS] Starting infinite-retry simulation...")
+          print("[CHAOS] In real life, this would have no stopping condition.")
+          print("[CHAOS] In OUR system, the token budget stops it first.")
+
+          for attempt in range(1, MAX_ATTEMPTS + 1):
+              payload = json.dumps({
+                  "task":         f"Retry attempt #{attempt}: broken agent task",
+                  "token_budget": 500,
+                  "priority":     "normal",
+                  "task_type":    "research",
+              }).encode()
+
+              req = urllib.request.Request(
+                  f"{TARGET}/agent/run",
+                  data=payload,
+                  headers={"Content-Type": "application/json"},
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(req, timeout=5) as resp:
+                      result = json.loads(resp.read())
+                      print(f"[CHAOS] Attempt {attempt}: queued (pos={result['queue_position']})")
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode()
+                  if e.code == 429:
+                      print(f"[CHAOS] Attempt {attempt}: BLOCKED by token budget! {body[:80]}")
+                      print("[CHAOS] Circuit broken. In production: dead letter queue, alert, human review.")
+                      sys.exit(0)
+                  print(f"[CHAOS] Attempt {attempt}: HTTP {e.code}")
+              except Exception as e:
+                  print(f"[CHAOS] Attempt {attempt}: {e}")
+
+              time.sleep(0.2)
+
+          print("[CHAOS] Simulation complete.")
+        resources:
+          requests:
+            cpu:    "50m"
+            memory: "64Mi"
+          limits:
+            cpu:    "100m"
+            memory: "128Mi"

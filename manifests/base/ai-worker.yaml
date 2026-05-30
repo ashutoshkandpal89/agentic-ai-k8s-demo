@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AI Worker Deployment — this is what KEDA scales up and down
+# Starts at 1 replica, KEDA drives it to 20 based on queue depth
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-worker
+  namespace: ai-agents
+  labels:
+    app: ai-worker
+    component: worker
+    version: "1.0.0"
+spec:
+  replicas: 1   # KEDA overrides this — don't touch
+  selector:
+    matchLabels:
+      app: ai-worker
+  template:
+    metadata:
+      labels:
+        app: ai-worker
+        component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path:   "/metrics"
+        prometheus.io/port:   "9090"
+    spec:
+      serviceAccountName: ai-worker-sa
+      terminationGracePeriodSeconds: 60   # Let in-flight tasks finish
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ai-worker
+        image: ai-worker:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: TASK_QUEUE
+          value: "task-queue"
+        - name: MOCK_LLM
+          value: "true"
+        - name: OTLP_ENDPOINT
+          value: "http://otel-collector:4317"
+        - name: METRICS_PORT
+          value: "9090"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name   # Pod name = worker ID in metrics
+        resources:
+          requests:
+            cpu:    "200m"
+            memory: "512Mi"
+          limits:
+            cpu:    "2"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9090
+          initialDelaySeconds: 20
+          periodSeconds: 20
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-worker-sa
+  namespace: ai-agents
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-worker
+  namespace: ai-agents
+  labels:
+    app: ai-worker
+spec:
+  selector:
+    app: ai-worker
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+  clusterIP: None   # Headless — Prometheus scrapes individual pods

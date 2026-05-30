@@ -1,0 +1,278 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "ai-agent-platform",
+    "title": "AI Agent Platform",
+    "tags": ["ai", "kubernetes", "keda", "cncf"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "time": { "from": "now-30m", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "🪙 Token Usage (Total)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 35000 },
+                { "color": "red", "value": 45000 }
+              ]
+            },
+            "unit": "short",
+            "displayName": "Tokens Used"
+          }
+        },
+        "targets": [{
+          "expr": "sum(agent_token_usage_total)",
+          "legendFormat": "tokens",
+          "refId": "A"
+        }],
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" }
+      },
+      {
+        "id": 2,
+        "title": "💰 Estimated LLM Cost (USD)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 5 },
+                { "color": "red", "value": 10 }
+              ]
+            },
+            "unit": "currencyUSD",
+            "decimals": 4,
+            "displayName": "Estimated Cost"
+          }
+        },
+        "targets": [{
+          "expr": "sum(agent_llm_cost_usd_total)",
+          "legendFormat": "cost",
+          "refId": "A"
+        }],
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      },
+      {
+        "id": 3,
+        "title": "🤖 AI Worker Replicas (KEDA)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "blue", "value": null },
+                { "color": "yellow", "value": 10 },
+                { "color": "red", "value": 18 }
+              ]
+            },
+            "unit": "short",
+            "displayName": "Worker Pods"
+          }
+        },
+        "targets": [{
+          "expr": "kube_deployment_spec_replicas{deployment=\"ai-worker\",namespace=\"ai-agents\"}",
+          "legendFormat": "replicas",
+          "refId": "A"
+        }],
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      },
+      {
+        "id": 4,
+        "title": "📋 Task Queue Depth",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 20 },
+                { "color": "red", "value": 50 }
+              ]
+            },
+            "unit": "short",
+            "displayName": "Queue Depth"
+          }
+        },
+        "targets": [{
+          "expr": "agent_task_queue_depth",
+          "legendFormat": "queue depth",
+          "refId": "A"
+        }],
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      },
+      {
+        "id": 5,
+        "title": "🚫 Token Budget Breaches",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ]
+            },
+            "unit": "short",
+            "displayName": "Budget Rejections"
+          }
+        },
+        "targets": [{
+          "expr": "sum(increase(agent_token_budget_breaches_total[5m]))",
+          "legendFormat": "rejections",
+          "refId": "A"
+        }],
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+      },
+      {
+        "id": 6,
+        "title": "📈 Token Usage Over Time",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "unit": "short",
+            "custom": { "lineWidth": 2, "fillOpacity": 10 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(agent_token_usage_total[1m])) * 60",
+            "legendFormat": "tokens/min",
+            "refId": "A"
+          },
+          {
+            "expr": "50000 / 60",
+            "legendFormat": "budget ceiling (per min)",
+            "refId": "B"
+          }
+        ],
+        "options": { "tooltip": { "mode": "multi" } }
+      },
+      {
+        "id": 7,
+        "title": "⚡ Worker Auto-Scaling (KEDA Effect)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "unit": "short",
+            "custom": { "lineWidth": 2 }
+          }
+        },
+        "targets": [
+          {
+            "expr": "kube_deployment_spec_replicas{deployment=\"ai-worker\",namespace=\"ai-agents\"}",
+            "legendFormat": "worker replicas",
+            "refId": "A"
+          },
+          {
+            "expr": "agent_task_queue_depth",
+            "legendFormat": "queue depth",
+            "refId": "B"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "✅ Task Success vs Failure Rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": { "lineWidth": 2, "fillOpacity": 10 }
+          },
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "failures/sec" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "success/sec" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+          ]
+        },
+        "targets": [
+          {
+            "expr": "rate(agent_tasks_submitted_total{status=\"accepted\"}[2m])",
+            "legendFormat": "success/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(agent_tasks_submitted_total{status!=\"accepted\"}[2m])",
+            "legendFormat": "failures/sec",
+            "refId": "B"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "⏱️ Task Latency P50 / P95 / P99",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "fieldConfig": {
+          "defaults": { "unit": "s", "custom": { "lineWidth": 2 } }
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(agent_task_latency_seconds_bucket[5m]))",
+            "legendFormat": "P50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(agent_task_latency_seconds_bucket[5m]))",
+            "legendFormat": "P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(agent_task_latency_seconds_bucket[5m]))",
+            "legendFormat": "P99",
+            "refId": "C"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "🔒 Kyverno Policy Violations",
+        "type": "table",
+        "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+        "targets": [{
+          "expr": "kyverno_policy_results_total{result=\"fail\"}",
+          "legendFormat": "{{policy}} — {{resource_kind}}/{{resource_name}}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }],
+        "options": { "showHeader": true },
+        "fieldConfig": { "defaults": { "custom": { "displayMode": "auto" } } }
+      }
+    ],
+    "annotations": {
+      "list": [{
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }]
+    }
+  },
+  "folderId": 0,
+  "overwrite": true
+}

@@ -1,0 +1,268 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Prometheus ConfigMap — scrape AI agent metrics
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'ai-demo'
+        env: 'local'
+
+    rule_files:
+      - /etc/prometheus/rules/*.yaml
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: []
+
+    scrape_configs:
+      # Scrape Prometheus itself
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # Agent Orchestrator
+      - job_name: 'agent-orchestrator'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['ai-agents']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_pod_label_component]
+            target_label: component
+
+      # Redis exporter
+      - job_name: 'redis'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['ai-agents']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: redis
+          - source_labels: [__address__]
+            action: replace
+            regex: ([^:]+)(?::\d+)?
+            replacement: $1:9121
+            target_label: __address__
+
+      # KEDA metrics
+      - job_name: 'keda'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['keda']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: keda-operator
+
+  # Alert rules for AI agents
+  ai-agent-rules.yaml: |
+    groups:
+    - name: ai-agent-alerts
+      interval: 30s
+      rules:
+
+      # Alert: Token budget over 70%
+      - alert: AIAgentTokenBudgetHigh
+        expr: |
+          (agent_token_usage_total / 50000) * 100 > 70
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "AI agent token budget above 70%"
+          description: "Token usage is {{ $value }}% of budget. Cost explosion risk."
+          runbook: "https://github.com/yourorg/runbooks/token-budget"
+
+      # Alert: Token budget over 90%
+      - alert: AIAgentTokenBudgetCritical
+        expr: |
+          (agent_token_usage_total / 50000) * 100 > 90
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "AI agent token budget CRITICAL (>90%)"
+          description: "Immediate action required. Current: {{ $value }}%"
+
+      # Alert: Queue depth growing uncontrolled
+      - alert: AIAgentQueueDepthHigh
+        expr: agent_task_queue_depth > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI agent task queue depth > 50"
+          description: "Queue depth: {{ $value }}. Workers may be insufficient or stuck."
+
+      # Alert: Task failure rate high
+      - alert: AIAgentHighFailureRate
+        expr: |
+          rate(agent_tasks_submitted_total{status="failed"}[5m]) /
+          rate(agent_tasks_submitted_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI agent task failure rate > 10%"
+          description: "Failure rate: {{ $value | humanizePercentage }}"
+
+      # Alert: Worker count at max (KEDA ceiling hit)
+      - alert: AIAgentWorkersAtMaxCapacity
+        expr: kube_deployment_spec_replicas{deployment="ai-worker", namespace="ai-agents"} >= 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI workers at maximum replica count (20)"
+          description: "KEDA ceiling reached. Queue may not drain fast enough."
+
+      # Alert: LLM cost per hour exceeding threshold
+      - alert: AIAgentCostHigh
+        expr: increase(agent_llm_cost_usd_total[1h]) > 10
+        for: 0m
+        labels:
+          severity: warning
+          team: finops
+        annotations:
+          summary: "AI agent LLM cost exceeds $10/hour"
+          description: "Hourly cost: ${{ $value }}. Finance will notice before you do."
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Prometheus Deployment
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus-sa
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.51.0
+        args:
+          - "--config.file=/etc/prometheus/prometheus.yml"
+          - "--storage.tsdb.path=/prometheus"
+          - "--storage.tsdb.retention.time=24h"
+          - "--web.enable-lifecycle"
+        ports:
+        - containerPort: 9090
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: storage
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30090
+  type: NodePort
+
+---
+# RBAC for Prometheus to discover pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-sa
+  namespace: monitoring
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods", "services", "endpoints", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: prometheus-sa
+  namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: prometheus-role
+  apiGroup: rbac.authorization.k8s.io
