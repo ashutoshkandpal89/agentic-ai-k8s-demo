@@ -290,6 +290,10 @@ Zsh doesn't accept inline \`#\` comments typed directly in terminal. Copy comman
 - 💼 **LinkedIn:** [linkedin.com/in/ashutoshkandpal](https://linkedin.com/in/ashutoshkandpal)
 ---
 
+> **Windows users:** Use WSL2 (Ubuntu) for the best experience.  
+> All commands work identically inside WSL2.  
+> See [WSL2 install guide](https://learn.microsoft.com/en-us/windows/wsl/install)
+
 ## ⭐ If this helped you
 
 Give it a star and share it with your platform team.  
