@@ -19,3 +19,4 @@ kubeconfig
 docs/SPEAKER_NOTES.md
 *.pptx
 *.pdf
+_private/
