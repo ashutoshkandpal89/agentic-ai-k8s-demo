@@ -49,7 +49,6 @@
 \`\`\`
 
 ---
-
 ## 📋 Prerequisites
 
 \`\`\`bash
@@ -289,7 +288,6 @@ Zsh doesn't accept inline \`#\` comments typed directly in terminal. Copy comman
 - 👤 **Speaker:** Ashutosh Kandpal — Cloud & AI Consultant | Corporate Trainer
 - 🌐 **Website:** [ashutoshkandpal.com](https://ashutoshkandpal.com/)
 - 💼 **LinkedIn:** [linkedin.com/in/ashutoshkandpal](https://linkedin.com/in/ashutoshkandpal)
-
 ---
 
 ## ⭐ If this helped you
