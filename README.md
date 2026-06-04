@@ -1,5 +1,14 @@
-# 🤖 Agentic AI Without Chaos
-### Open Source Reference Implementation for Operating AI Agents on Kubernetes
+## 🤖 Agentic AI Without Chaos
+
+Open Source Reference Implementation for Operating AI Agents on Kubernetes
+
+## Why This Project Exists
+
+Most AI agent examples focus on building agents.
+
+This project focuses on operating them safely in production using Kubernetes and cloud-native open source tooling.
+
+The goal is to demonstrate practical patterns for governance, observability, autoscaling, and cost control when running agent workloads at scale.
 
 > *"Building AI agents is easy. Operating them safely and cost-efficiently in production is the hard part."*  
 > — Ashutosh Kandpal, Cloud & AI Consultant
