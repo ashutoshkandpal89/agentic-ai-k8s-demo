@@ -1,5 +1,5 @@
 # 🤖 Agentic AI Without Chaos
-### Demo Repository — CNCF Meetup Talk
+### Open Source Reference Implementation for Operating AI Agents on Kubernetes
 
 > *"Building AI agents is easy. Operating them safely and cost-efficiently in production is the hard part."*  
 > — Ashutosh Kandpal, Cloud & AI Consultant
@@ -208,7 +208,6 @@ agentic-ai-k8s-demo/
 │   └── 99-cleanup.sh                 # Delete cluster entirely
 └── docs/
     ├── DEMO_STEPS.md                 # Exact commands + expected output + fallbacks
-    ├── SPEAKER_NOTES.md              # Full 40-minute talk script
     └── TROUBLESHOOTING.md            # Every failure mode + fix
 \`\`\`
 
